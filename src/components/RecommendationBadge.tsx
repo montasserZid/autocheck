@@ -2,12 +2,17 @@ import type { FinalRecommendation, RiskLevel } from "@/types/domain";
 
 export function RecommendationBadge({
   recommendation,
-  riskLevel
+  riskLevel,
 }: {
   recommendation: FinalRecommendation;
   riskLevel?: RiskLevel;
 }) {
-  const className = recommendation === "Avoid" ? "badge danger" : "badge success";
+  const className =
+    recommendation === "Avoid"
+      ? "badge high"
+      : recommendation === "Ask more questions"
+        ? "badge medium"
+        : "badge low";
 
   return (
     <span className={className}>

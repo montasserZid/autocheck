@@ -12,7 +12,7 @@ export function ButtonLink({
   href,
   children,
   variant = "primary",
-  className = ""
+  className = "",
 }: ButtonLinkProps) {
   return (
     <Link className={`button button-${variant} ${className}`} href={href}>

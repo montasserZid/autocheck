@@ -8,10 +8,7 @@ export function Footer() {
       <Container className="footer-grid">
         <div>
           <h2>AutoCheck QC</h2>
-          <p>
-            AI-assisted used-car pre-screening and inspection booking for Montreal and Quebec
-            buyers.
-          </p>
+          <p>Used-car listing pre-screening for Montreal and Quebec buyers.</p>
           <p className="fine-print">{siteConfig.disclaimer}</p>
         </div>
         <div>
@@ -31,11 +28,23 @@ export function Footer() {
         <div>
           <h3>Official buyer resources</h3>
           {officialSources.map((source) => (
-            <a key={source.href} href={source.href} target="_blank" rel="noreferrer">
+            <a
+              key={source.href}
+              href={source.href}
+              target="_blank"
+              rel="noreferrer"
+            >
               {source.label}
             </a>
           ))}
         </div>
+      </Container>
+      <Container className="footer-bottom">
+        <span>AutoCheck QC / Built for Quebec buyers</span>
+        <span>
+          Preview environment - payments and live report delivery are not
+          enabled.
+        </span>
       </Container>
     </footer>
   );

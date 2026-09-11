@@ -1,43 +1,51 @@
 "use client";
-
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { demoVehicleIntake } from "@/lib/mockData";
+import Link from "next/link";
 import { generateDemoReport } from "@/lib/reportEngine";
-import { getStoredIntake, getStoredReportType, saveReport } from "@/lib/localStorage";
-import type { DemoBuyerReport, ReportPackage } from "@/types/domain";
+import {
+  getStoredIntake,
+  getStoredReportType,
+  saveReport,
+} from "@/lib/localStorage";
+import type { DemoBuyerReport } from "@/types/domain";
 import { ReportView } from "./ReportView";
-
-function coerceReportType(value: string | null): ReportPackage {
-  return value === "free" || value === "full" ? value : "full";
-}
-
+import { ProgressSteps } from "./ProgressSteps";
 export function ReportExperience() {
-  const searchParams = useSearchParams();
+  const params = useSearchParams();
   const [report, setReport] = useState<DemoBuyerReport | null>(null);
-
-  const reportType = useMemo<ReportPackage>(() => {
-    return coerceReportType(searchParams.get("type"));
-  }, [searchParams]);
-
+  const [ready, setReady] = useState(false);
   useEffect(() => {
-    const storedType = getStoredReportType();
-    const selectedType = searchParams.get("type") ? reportType : storedType ?? reportType;
-    const intake = getStoredIntake() ?? demoVehicleIntake;
-    const generated = generateDemoReport(intake, selectedType);
-
-    saveReport(generated);
-    setReport(generated);
-  }, [reportType, searchParams]);
-
-  if (!report) {
+    const intake = getStoredIntake();
+    if (intake) {
+      const type = params.get("type") ?? getStoredReportType();
+      const generated = generateDemoReport(
+        intake,
+        type === "free" ? "free" : "full",
+      );
+      saveReport(generated);
+      setReport(generated);
+    }
+    setReady(true);
+  }, [params]);
+  if (!ready) return <p role="status">Preparing your buyer report...</p>;
+  if (!report)
     return (
-      <div className="loading-panel">
-        <p className="eyebrow">Generating demo report</p>
-        <h1>Preparing your AutoCheck QC report...</h1>
-      </div>
+      <section className="empty-state">
+        <h1>Add a listing to see your report.</h1>
+        <p>Your vehicle details are not available in this browser.</p>
+        <Link className="button button-primary" href="/check">
+          Check This Car
+        </Link>
+        <Link className="text-link" href="/example-report">
+          See an Example Report
+        </Link>
+      </section>
     );
-  }
-
-  return <ReportView report={report} />;
+  return (
+    <>
+      <ProgressSteps current={3} />
+      <ReportView report={report} />
+    </>
+  );
 }

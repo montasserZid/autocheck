@@ -4,8 +4,9 @@ import { Container } from "@/components/Container";
 import { ReportExperience } from "@/components/ReportExperience";
 
 export const metadata: Metadata = {
-  title: "Demo Buyer Report",
-  description: "View the AutoCheck QC demo report generated from local mock data."
+  title: "Buyer Report",
+  description:
+    "Review listing risks, seller questions and your next step before buying.",
 };
 
 export default function ReportPage() {

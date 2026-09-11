@@ -5,7 +5,12 @@ interface SectionHeadingProps {
   align?: "left" | "center";
 }
 
-export function SectionHeading({ eyebrow, title, body, align = "left" }: SectionHeadingProps) {
+export function SectionHeading({
+  eyebrow,
+  title,
+  body,
+  align = "left",
+}: SectionHeadingProps) {
   return (
     <div className={`section-heading section-heading-${align}`}>
       {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}

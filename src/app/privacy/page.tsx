@@ -1,37 +1,72 @@
 import type { Metadata } from "next";
 import { Container } from "@/components/Container";
-import { SectionHeading } from "@/components/SectionHeading";
-
+import { ClearDataButton } from "@/components/ClearDataButton";
 export const metadata: Metadata = {
   title: "Privacy",
-  description: "Privacy approach for AutoCheck QC Phase 1 demo."
+  description:
+    "How the AutoCheck QC preview handles your information and how to delete saved data.",
 };
-
 export default function PrivacyPage() {
   return (
     <main className="page-shell">
       <Container className="narrow">
-        <SectionHeading
-          eyebrow="Privacy"
-          title="Collect only what is needed."
-          body="Phase 1 keeps customer journey data in local browser storage. Future production services must use secure storage, retention rules, and deletion requests."
-        />
+        <div className="page-heading">
+          <p className="eyebrow">Privacy</p>
+          <h1>
+            Your information.
+            <br />
+            Within your control.
+          </h1>
+          <p>This notice describes the current preview experience.</p>
+        </div>
         <div className="policy-content">
-          <h2>Information the product may collect later</h2>
-          <p>
-            Name, phone number, email, seller information, vehicle location, VIN, screenshots,
-            listing text, report details, inspection request details, and feedback.
-          </p>
-          <h2>Phase 1 demo behavior</h2>
-          <p>
-            Form data and inspection requests are stored locally in this browser. No database,
-            email service, payment provider, AI API, SMS provider, or file storage is connected.
-          </p>
-          <h2>Production principles</h2>
-          <p>
-            AutoCheck QC should collect only what is needed, store only what is useful, protect
-            uploaded screenshots, restrict admin access, and allow deletion requests.
-          </p>
+          <section>
+            <h2>What is saved</h2>
+            <p>
+              Listing text, links, confirmed vehicle details, reports and form
+              drafts are saved in this browser. Inspection requests and contact
+              messages may include the name, phone, email and location you
+              enter. Selected images retain only file names, sizes and types;
+              image contents are not uploaded.
+            </p>
+          </section>
+          <section>
+            <h2>Where it goes</h2>
+            <p>
+              Forms do not send this information to a report provider,
+              inspector, payment service or support team. Anyone with access to
+              this browser profile may be able to see saved information.
+              Standard requests for the website itself still occur when you load
+              pages.
+            </p>
+          </section>
+          <section>
+            <h2>Keep personal information to a minimum</h2>
+            <p>
+              Do not enter identity documents, card details or unnecessary
+              seller information. Avoid using a shared browser for sensitive
+              information. Information saved here remains until you delete it or
+              clear the browser&apos;s site data.
+            </p>
+          </section>
+          <section>
+            <h2>Delete your saved information</h2>
+            <p>
+              This removes AutoCheck QC listings, reports, inspection drafts and
+              contact messages from this browser, including older saved
+              versions. Close other AutoCheck QC tabs first so they do not save
+              an open draft again.
+            </p>
+            <ClearDataButton />
+          </section>
+          <section>
+            <h2>External resources</h2>
+            <p>
+              Official resource links take you to separate websites with their
+              own privacy practices. They are not searches performed on your
+              behalf.
+            </p>
+          </section>
         </div>
       </Container>
     </main>

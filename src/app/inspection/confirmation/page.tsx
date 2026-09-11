@@ -4,7 +4,7 @@ import { ConfirmationDetails } from "@/components/ConfirmationDetails";
 
 export const metadata: Metadata = {
   title: "Inspection Request Confirmation",
-  description: "Confirmation for the AutoCheck QC demo mobile inspection request."
+  description: "Review your vehicle, location and requested inspection time.",
 };
 
 export default function InspectionConfirmationPage() {

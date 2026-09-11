@@ -4,13 +4,14 @@ import { InspectionBookingForm } from "@/components/InspectionBookingForm";
 
 export const metadata: Metadata = {
   title: "Book a Mobile Inspection",
-  description: "Submit a demo mobile inspection request for a used car in Montreal or Quebec."
+  description:
+    "Prepare a mobile inspection request for a used car in Montreal and surrounding areas.",
 };
 
 export default function InspectionPage() {
   return (
     <main className="page-shell">
-      <Container className="narrow">
+      <Container>
         <InspectionBookingForm />
       </Container>
     </main>

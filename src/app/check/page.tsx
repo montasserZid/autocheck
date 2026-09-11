@@ -4,7 +4,8 @@ import { VehicleIntakeFlow } from "@/components/VehicleIntakeFlow";
 
 export const metadata: Metadata = {
   title: "Check a Car",
-  description: "Paste a used-car listing and generate a demo AutoCheck QC buyer report."
+  description:
+    "Paste a used-car ad, review the extracted details and get a clear buyer checklist.",
 };
 
 export default function CheckPage() {

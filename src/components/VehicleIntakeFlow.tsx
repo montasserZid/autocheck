@@ -1,447 +1,621 @@
 "use client";
-
-import { ChangeEvent, FormEvent, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type {
-  CarfaxStatus,
-  InspectionAllowedStatus,
-  MentionStatus,
-  ReportPackage,
-  SellerType,
-  UploadedFileMeta,
-  VehicleIntake
-} from "@/types/domain";
+import {
+  ArrowLeft,
+  ArrowRight,
+  FileText,
+  Link2,
+  ImagePlus,
+  PenLine,
+  ShieldCheck,
+  X,
+} from "lucide-react";
+import type { VehicleIntake } from "@/types/domain";
+import { emptyIntake, extractListing } from "@/lib/listingExtraction";
 import { formatFileSize } from "@/lib/format";
-import { saveIntake, saveReportType } from "@/lib/localStorage";
+import {
+  getStoredIntake,
+  readLocal,
+  removeLocal,
+  writeLocal,
+  saveIntake,
+  saveReportType,
+} from "@/lib/localStorage";
+import {
+  validateIntake,
+  validatePhotos,
+  validListingUrl,
+} from "@/lib/validation";
+import { vehicleTitle } from "@/lib/reportEngine";
+import { ProgressSteps } from "./ProgressSteps";
+import { PricingCards } from "./PricingCards";
 
-interface FormState {
-  listingUrl: string;
-  listingText: string;
-  make: string;
-  model: string;
-  year: string;
-  trim: string;
-  mileageKm: string;
-  askingPriceCad: string;
-  city: string;
-  sellerType: SellerType;
-  vin: string;
-  accidentHistoryMentioned: MentionStatus;
-  carfaxStatus: CarfaxStatus;
-  inspectionAllowed: InspectionAllowedStatus;
-  sellerDescription: string;
-  photos: UploadedFileMeta[];
+type Method = "text" | "url" | "images" | "manual";
+interface Draft {
+  form: VehicleIntake;
+  step: number;
+  method: Method;
+  found: string[];
+  uncertain: string[];
 }
-
-const initialForm: FormState = {
-  listingUrl: "",
-  listingText: "",
-  make: "",
-  model: "",
-  year: "",
-  trim: "",
-  mileageKm: "",
-  askingPriceCad: "",
-  city: "Montreal",
-  sellerType: "unknown",
-  vin: "",
-  accidentHistoryMentioned: "unknown",
-  carfaxStatus: "unknown",
-  inspectionAllowed: "unknown",
-  sellerDescription: "",
-  photos: []
-};
-
-function toNumber(value: string): number {
-  return Number(value.replace(/[^\d.]/g, ""));
-}
-
-function toIntake(form: FormState): VehicleIntake {
-  return {
-    listingUrl: form.listingUrl.trim() || undefined,
-    listingText: form.listingText.trim(),
-    make: form.make.trim(),
-    model: form.model.trim(),
-    year: toNumber(form.year),
-    trim: form.trim.trim() || undefined,
-    mileageKm: toNumber(form.mileageKm),
-    askingPriceCad: toNumber(form.askingPriceCad),
-    city: form.city.trim(),
-    sellerType: form.sellerType,
-    vin: form.vin.trim() || undefined,
-    accidentHistoryMentioned: form.accidentHistoryMentioned,
-    carfaxStatus: form.carfaxStatus,
-    inspectionAllowed: form.inspectionAllowed,
-    sellerDescription: form.sellerDescription.trim(),
-    photos: form.photos,
-    preferredLanguage: "en",
-    submittedAt: new Date().toISOString()
-  };
-}
-
+const methods = [
+  { id: "text", label: "Ad text", icon: FileText },
+  { id: "url", label: "Listing link", icon: Link2 },
+  { id: "images", label: "Screenshots", icon: ImagePlus },
+  { id: "manual", label: "Manual", icon: PenLine },
+] as const;
 export function VehicleIntakeFlow() {
   const router = useRouter();
-  const [step, setStep] = useState<"intake" | "selection" | "demoCheckout">("intake");
-  const [form, setForm] = useState<FormState>(initialForm);
-  const [submittedIntake, setSubmittedIntake] = useState<VehicleIntake | null>(null);
-  const [errors, setErrors] = useState<string[]>([]);
-  const [selectedPackage, setSelectedPackage] = useState<ReportPackage>("full");
-
-  const vehicleLabel = useMemo(() => {
-    if (!form.make && !form.model && !form.year) return "your vehicle";
-    return [form.year, form.make, form.model, form.trim].filter(Boolean).join(" ");
-  }, [form.make, form.model, form.trim, form.year]);
-
-  function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm((current) => ({ ...current, [key]: value }));
+  const [form, setForm] = useState<VehicleIntake>(emptyIntake);
+  const [step, setStep] = useState(0);
+  const [method, setMethod] = useState<Method>("text");
+  const [found, setFound] = useState<string[]>([]);
+  const [uncertain, setUncertain] = useState<string[]>([]);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [notice, setNotice] = useState("");
+  const [ready, setReady] = useState(false);
+  const [storageOk, setStorageOk] = useState(true);
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const stored = getStoredIntake();
+    const draft = readLocal<Draft>("intake-draft");
+    const consumeParams = (...keys: string[]) => {
+      let changed = false;
+      keys.forEach((key) => {
+        if (params.has(key)) {
+          params.delete(key);
+          changed = true;
+        }
+      });
+      if (changed) {
+        const next = params.toString();
+        window.history.replaceState(
+          window.history.state,
+          "",
+          `${window.location.pathname}${next ? `?${next}` : ""}`,
+        );
+      }
+    };
+    if (params.has("new")) {
+      setForm(emptyIntake);
+      removeLocal("intake-draft");
+      removeLocal("intake");
+      removeLocal("report");
+      removeLocal("report-type");
+      consumeParams("new");
+    } else if (params.get("step") === "choose" && stored) {
+      setForm(stored);
+      setStep(2);
+      consumeParams("step");
+    } else if (
+      draft &&
+      draft.form &&
+      typeof draft.form.listingText === "string" &&
+      Array.isArray(draft.form.photos)
+    ) {
+      setForm({ ...emptyIntake, ...draft.form });
+      setStep([0, 1, 2].includes(draft.step) ? draft.step : 0);
+      setMethod(
+        methods.some((m) => m.id === draft.method) ? draft.method : "text",
+      );
+      setFound(draft.found ?? []);
+      setUncertain(draft.uncertain ?? []);
+    }
+    setReady(true);
+  }, []);
+  useEffect(() => {
+    if (ready)
+      setStorageOk(
+        writeLocal("intake-draft", { form, step, method, found, uncertain }),
+      );
+  }, [form, step, method, found, uncertain, ready]);
+  function changeStep(next: number) {
+    setStep(next);
+    setErrors({});
+    setNotice("");
+    window.scrollTo({ top: 0 });
+    setTimeout(() => heading.current?.focus(), 0);
   }
-
-  function handleFiles(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? []).map((file) => ({
-      name: file.name,
-      size: file.size,
-      type: file.type || "unknown"
-    }));
-
-    updateField("photos", files);
+  function update<K extends keyof VehicleIntake>(
+    key: K,
+    value: VehicleIntake[K],
+  ) {
+    setForm((f) => ({ ...f, [key]: value }));
+    setFound((keys) => keys.filter((field) => field !== key));
+    setUncertain((keys) => keys.filter((field) => field !== key));
+    setErrors((e) => {
+      const next = { ...e };
+      delete next[key];
+      return next;
+    });
   }
-
-  function validate(): string[] {
-    const validationErrors: string[] = [];
-
-    if (!form.listingText.trim()) validationErrors.push("Paste the listing text or seller ad details.");
-    if (!form.make.trim()) validationErrors.push("Enter the make.");
-    if (!form.model.trim()) validationErrors.push("Enter the model.");
-    if (!toNumber(form.year)) validationErrors.push("Enter the year.");
-    if (!toNumber(form.mileageKm)) validationErrors.push("Enter the mileage.");
-    if (!toNumber(form.askingPriceCad)) validationErrors.push("Enter the asking price.");
-    if (!form.city.trim()) validationErrors.push("Enter the city.");
-
-    return validationErrors;
+  function files(event: ChangeEvent<HTMLInputElement>) {
+    const next = [
+      ...form.photos,
+      ...Array.from(event.target.files ?? []).map((f) => ({
+        name: f.name,
+        size: f.size,
+        type: f.type,
+      })),
+    ];
+    const error = validatePhotos(next);
+    if (error) setErrors({ photos: error });
+    else {
+      update("photos", next);
+      setErrors({});
+    }
+    event.target.value = "";
   }
-
-  function submitIntake(event: FormEvent<HTMLFormElement>) {
+  function provide(event: FormEvent) {
     event.preventDefault();
-    const validationErrors = validate();
-    setErrors(validationErrors);
-
-    if (validationErrors.length > 0) return;
-
-    const intake = toIntake(form);
-    saveIntake(intake);
-    setSubmittedIntake(intake);
-    setStep("selection");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    if (!validListingUrl(form.listingUrl ?? "")) {
+      setErrors({
+        listingUrl: "Use a complete http:// or https:// listing link.",
+      });
+      return;
+    }
+    if (method === "manual") {
+      changeStep(1);
+      return;
+    }
+    if (!form.listingText.trim()) {
+      if (form.photos.length) {
+        changeStep(1);
+        return;
+      }
+      if (form.listingUrl?.trim()) {
+        setNotice(
+          "We saved the listing link. For this preview, paste the ad text to extract vehicle details, or add screenshots and enter the details shown. Marketplace pages cannot be read here.",
+        );
+        setMethod("text");
+        return;
+      }
+      setErrors({
+        listingText:
+          "Paste the ad text, add a listing link or image, or choose Manual.",
+      });
+      return;
+    }
+    const result = extractListing(form.listingText);
+    setForm((f) => ({
+      ...emptyIntake,
+      listingUrl: f.listingUrl,
+      listingText: f.listingText,
+      photos: f.photos,
+      ...result.details,
+    }));
+    setFound(result.found);
+    setUncertain(result.uncertain);
+    changeStep(1);
   }
-
-  function continueToReport(reportType: ReportPackage) {
-    const intake = submittedIntake ?? toIntake(form);
-    saveIntake(intake);
-    saveReportType(reportType);
-    router.push(`/report?type=${reportType}`);
+  function review(event: FormEvent) {
+    event.preventDefault();
+    const next = validateIntake(form);
+    setErrors(next);
+    if (Object.keys(next).length) {
+      setTimeout(
+        () =>
+          document
+            .querySelector<HTMLInputElement>("[aria-invalid=true]")
+            ?.focus(),
+        0,
+      );
+      return;
+    }
+    saveIntake({ ...form, submittedAt: new Date().toISOString() });
+    changeStep(2);
   }
-
+  function status(key: keyof VehicleIntake) {
+    const value = form[key];
+    const missing =
+      value === null ||
+      value === "" ||
+      value === "unknown" ||
+      value === undefined;
+    return (
+      <span
+        className={`field-status ${missing ? "missing" : found.includes(key) ? "found" : "confirm"}`}
+      >
+        {uncertain.includes(key) && missing
+          ? "Needs confirmation"
+          : missing
+            ? "Missing"
+            : found.includes(key)
+              ? "Found"
+              : "Needs confirmation"}
+      </span>
+    );
+  }
+  function field(
+    key:
+      | "year"
+      | "make"
+      | "model"
+      | "trim"
+      | "mileageKm"
+      | "askingPriceCad"
+      | "city"
+      | "vin",
+    label: string,
+    numeric = false,
+  ) {
+    return (
+      <div className="review-field" key={key}>
+        <label htmlFor={key}>
+          <span>
+            {label}
+            {["make", "model"].includes(key) ? " *" : ""}
+          </span>
+          {status(key)}
+        </label>
+        <input
+          id={key}
+          name={key}
+          value={form[key] ?? ""}
+          type={numeric ? "number" : "text"}
+          inputMode={numeric ? "numeric" : "text"}
+          aria-invalid={!!errors[key]}
+          aria-describedby={errors[key] ? `${key}-error` : undefined}
+          maxLength={key === "vin" ? 17 : 100}
+          placeholder={
+            numeric ? "Unknown" : key === "vin" ? "Not provided" : ""
+          }
+          onChange={(e) =>
+            update(
+              key,
+              numeric
+                ? e.target.value === ""
+                  ? null
+                  : Number(e.target.value)
+                : key === "vin"
+                  ? e.target.value.toUpperCase()
+                  : e.target.value,
+            )
+          }
+        />
+        {errors[key] && (
+          <small className="field-error" id={`${key}-error`}>
+            {errors[key]}
+          </small>
+        )}
+      </div>
+    );
+  }
+  function select(
+    key:
+      | "sellerType"
+      | "accidentHistoryMentioned"
+      | "rebuiltStatus"
+      | "carfaxStatus"
+      | "inspectionAllowed"
+      | "maintenanceRecords",
+    label: string,
+    options: [string, string][],
+  ) {
+    return (
+      <div className="review-field" key={key}>
+        <label htmlFor={key}>
+          <span>{label}</span>
+          {status(key)}
+        </label>
+        <select
+          id={key}
+          value={form[key]}
+          onChange={(e) =>
+            update(key, e.target.value as VehicleIntake[typeof key])
+          }
+        >
+          <option value="unknown">Unknown / not stated</option>
+          {options.map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+  if (!ready) return <p role="status">Preparing your listing...</p>;
   return (
-    <div className="flow-layout">
-      <aside className="flow-sidebar" aria-label="Progress">
-        <p className="eyebrow">Phase 1 demo journey</p>
-        <h2>Check a used car before you commit.</h2>
-        <ol className="step-list">
-          <li className={step === "intake" ? "active" : ""}>Enter listing details</li>
-          <li className={step === "selection" ? "active" : ""}>Choose report type</li>
-          <li className={step === "demoCheckout" ? "active" : ""}>Demo checkout</li>
-          <li>View report</li>
-          <li>Book inspection</li>
-        </ol>
-        <p className="fine-print">
-          Uploads are local metadata only in Phase 1. No screenshots are sent to a server.
-        </p>
-      </aside>
-
-      <main className="flow-main">
-        {step === "intake" ? (
-          <form className="form-panel" onSubmit={submitIntake}>
-            <div className="form-head">
-              <p className="eyebrow">Vehicle intake</p>
-              <h1>Tell us about the listing.</h1>
-              <p>
-                Paste information from Facebook Marketplace, Kijiji, AutoTrader, dealer pages,
-                or a private seller message. The app does not scrape marketplaces.
-              </p>
-            </div>
-
-            {errors.length > 0 ? (
-              <div className="form-errors" role="alert">
-                <strong>Fix these items:</strong>
-                <ul>
-                  {errors.map((error) => (
-                    <li key={error}>{error}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            <fieldset>
-              <legend>Listing source</legend>
-              <label>
-                Listing URL optional
-                <input
-                  type="url"
-                  value={form.listingUrl}
-                  placeholder="https://..."
-                  onChange={(event) => updateField("listingUrl", event.target.value)}
-                />
-              </label>
-              <label>
-                Listing text
-                <textarea
-                  value={form.listingText}
-                  rows={8}
-                  placeholder="Paste the full ad, seller notes, and anything important from the listing."
-                  onChange={(event) => updateField("listingText", event.target.value)}
-                />
-              </label>
-            </fieldset>
-
-            <fieldset>
-              <legend>Vehicle details</legend>
-              <div className="form-grid">
-                <label>
-                  Make
-                  <input
-                    value={form.make}
-                    placeholder="Toyota"
-                    onChange={(event) => updateField("make", event.target.value)}
-                  />
-                </label>
-                <label>
-                  Model
-                  <input
-                    value={form.model}
-                    placeholder="Corolla"
-                    onChange={(event) => updateField("model", event.target.value)}
-                  />
-                </label>
-                <label>
-                  Year
-                  <input
-                    inputMode="numeric"
-                    value={form.year}
-                    placeholder="2018"
-                    onChange={(event) => updateField("year", event.target.value)}
-                  />
-                </label>
-                <label>
-                  Trim optional
-                  <input
-                    value={form.trim}
-                    placeholder="LE, EX, Touring..."
-                    onChange={(event) => updateField("trim", event.target.value)}
-                  />
-                </label>
-                <label>
-                  Mileage
-                  <input
-                    inputMode="numeric"
-                    value={form.mileageKm}
-                    placeholder="145000"
-                    onChange={(event) => updateField("mileageKm", event.target.value)}
-                  />
-                </label>
-                <label>
-                  Asking price CAD
-                  <input
-                    inputMode="numeric"
-                    value={form.askingPriceCad}
-                    placeholder="12900"
-                    onChange={(event) => updateField("askingPriceCad", event.target.value)}
-                  />
-                </label>
-                <label>
-                  City
-                  <input
-                    value={form.city}
-                    placeholder="Montreal"
-                    onChange={(event) => updateField("city", event.target.value)}
-                  />
-                </label>
-                <label>
-                  VIN optional
-                  <input
-                    value={form.vin}
-                    placeholder="Ask the seller if missing"
-                    onChange={(event) => updateField("vin", event.target.value.toUpperCase())}
-                  />
-                </label>
-              </div>
-            </fieldset>
-
-            <fieldset>
-              <legend>Seller and history signals</legend>
-              <div className="form-grid">
-                <label>
-                  Seller type
-                  <select
-                    value={form.sellerType}
-                    onChange={(event) => updateField("sellerType", event.target.value as SellerType)}
-                  >
-                    <option value="unknown">Unknown</option>
-                    <option value="private">Private seller</option>
-                    <option value="dealer">Dealer</option>
-                  </select>
-                </label>
-                <label>
-                  Accident history mentioned
-                  <select
-                    value={form.accidentHistoryMentioned}
-                    onChange={(event) =>
-                      updateField("accidentHistoryMentioned", event.target.value as MentionStatus)
-                    }
-                  >
-                    <option value="unknown">Unknown</option>
-                    <option value="yes">Yes</option>
-                    <option value="no">No</option>
-                  </select>
-                </label>
-                <label>
-                  Carfax mentioned/available
-                  <select
-                    value={form.carfaxStatus}
-                    onChange={(event) => updateField("carfaxStatus", event.target.value as CarfaxStatus)}
-                  >
-                    <option value="unknown">Unknown</option>
-                    <option value="available">Available</option>
-                    <option value="not_available">Not available</option>
-                  </select>
-                </label>
-                <label>
-                  Inspection allowed
-                  <select
-                    value={form.inspectionAllowed}
-                    onChange={(event) =>
-                      updateField("inspectionAllowed", event.target.value as InspectionAllowedStatus)
-                    }
-                  >
-                    <option value="unknown">Unknown</option>
-                    <option value="yes">Yes</option>
-                    <option value="no">No</option>
-                  </select>
-                </label>
-              </div>
-              <label>
-                Seller description or your concerns
-                <textarea
-                  value={form.sellerDescription}
-                  rows={5}
-                  placeholder="Example: seller says no rust, needs brakes, no Carfax, leaving Quebec, dealer says sold as-is..."
-                  onChange={(event) => updateField("sellerDescription", event.target.value)}
-                />
-              </label>
-            </fieldset>
-
-            <fieldset>
-              <legend>Screenshots/photos</legend>
-              <label className="upload-zone">
-                <span>Upload listing screenshots or car photos</span>
-                <input type="file" accept="image/*" multiple onChange={handleFiles} />
-              </label>
-              {form.photos.length > 0 ? (
-                <div className="file-list">
-                  {form.photos.map((photo) => (
-                    <span key={`${photo.name}-${photo.size}`}>
-                      {photo.name} ({formatFileSize(photo.size)})
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-            </fieldset>
-
-            <div className="form-actions">
-              <button className="button button-primary" type="submit">
-                Continue to Report Options
-              </button>
-            </div>
-          </form>
-        ) : null}
-
-        {step === "selection" ? (
-          <section className="selection-panel">
-            <p className="eyebrow">Report options</p>
-            <h1>Choose how to screen {vehicleLabel}.</h1>
-            <div className="pricing-grid">
-              <article className="comparison-card">
-                <div>
-                  <p className="eyebrow">Lead check</p>
-                  <h2>Free Quick Check</h2>
-                  <p>Fast snapshot for early filtering.</p>
-                </div>
-                <strong className="price">$0</strong>
-                <ul>
-                  <li>Basic risk level</li>
-                  <li>3 red flags</li>
-                  <li>3 seller questions</li>
-                  <li>Basic recommendation</li>
-                </ul>
-                <button className="button button-secondary" onClick={() => continueToReport("free")} type="button">
-                  Generate Free Demo
-                </button>
-              </article>
-
-              <article className="comparison-card highlighted">
-                <div>
-                  <p className="eyebrow">Buyer report</p>
-                  <h2>Full Buyer Report</h2>
-                  <p>Complete pre-screen before seeing, negotiating, or inspecting.</p>
-                </div>
-                <strong className="price">$19.99 CAD</strong>
-                <ul>
-                  <li>Vehicle summary and risk score</li>
-                  <li>Price logic and missing information</li>
-                  <li>Common issue checklist</li>
-                  <li>Seller questions and negotiation points</li>
-                  <li>Inspection recommendation and next step</li>
-                </ul>
-                <button
-                  className="button button-primary"
-                  onClick={() => {
-                    setSelectedPackage("full");
-                    setStep("demoCheckout");
-                    window.scrollTo({ top: 0, behavior: "smooth" });
-                  }}
-                  type="button"
-                >
-                  Continue to Demo Checkout
-                </button>
-              </article>
-            </div>
-          </section>
-        ) : null}
-
-        {step === "demoCheckout" ? (
-          <section className="checkout-panel">
-            <p className="eyebrow">Development checkout</p>
-            <h1>Full Buyer Report demo</h1>
-            <p>
-              Stripe is intentionally not connected in Phase 1. This screen marks the future paid
-              checkout step without collecting payment or card details.
+    <div className="intake-shell">
+      <ProgressSteps current={step} />
+      <div className="flow-layout">
+        <div className="flow-main">
+          <div className="form-head">
+            <p className="eyebrow">
+              {step === 0
+                ? "Start with the ad"
+                : step === 1
+                  ? "Vehicle review"
+                  : "Your next step"}
             </p>
-            <div className="checkout-summary">
-              <span>Selected package</span>
-              <strong>Full Buyer Report - $19.99 CAD</strong>
-              <span>Vehicle</span>
-              <strong>{vehicleLabel}</strong>
+            <h1 ref={heading} tabIndex={-1}>
+              {step === 0
+                ? "Add the car listing"
+                : step === 1
+                  ? "Here's what we found"
+                  : "Choose your buyer report"}
+            </h1>
+            <p>
+              {step === 0
+                ? "Paste the ad text to extract the details we can. Add a link or screenshots for reference, or enter details yourself."
+                : step === 1
+                  ? "Confirm the details before we analyze the listing. Seller statements are claims, not verified facts."
+                  : vehicleTitle(form)}
+            </p>
+          </div>
+          {!storageOk && (
+            <p className="notice" role="status">
+              Your browser cannot save this draft across refreshes. Keep this
+              tab open to continue.
+            </p>
+          )}
+          {!!Object.keys(errors).length && (
+            <div className="form-errors" role="alert">
+              {Object.values(errors).map((e) => (
+                <p key={e}>{e}</p>
+              ))}
             </div>
-            <div className="button-row">
-              <button className="button button-primary" onClick={() => continueToReport(selectedPackage)} type="button">
-                Generate Full Demo Report
+          )}
+          {notice && (
+            <p className="notice" role="status">
+              {notice}
+            </p>
+          )}
+          {step === 0 && (
+            <form onSubmit={provide} noValidate>
+              <div className="input-methods" aria-label="Listing input method">
+                {methods.map((m) => (
+                  <button
+                    type="button"
+                    aria-pressed={method === m.id}
+                    className={method === m.id ? "active" : ""}
+                    onClick={() => {
+                      setMethod(m.id);
+                      setErrors({});
+                    }}
+                    key={m.id}
+                  >
+                    <m.icon size={21} aria-hidden="true" />
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              {method === "text" && (
+                <label>
+                  Listing text
+                  <textarea
+                    rows={9}
+                    maxLength={20000}
+                    value={form.listingText}
+                    onChange={(e) => update("listingText", e.target.value)}
+                    placeholder="2015 Honda Civic EX, 165,000 km, $8,500. Montreal. Private seller. Carfax available. Inspection welcome..."
+                  />
+                  <small>
+                    Include the price, mileage and seller notes. Leave out
+                    unnecessary personal details.
+                  </small>
+                </label>
+              )}
+              {method === "url" && (
+                <>
+                  <label>
+                    Listing URL
+                    <input
+                      type="url"
+                      value={form.listingUrl}
+                      onChange={(e) => update("listingUrl", e.target.value)}
+                      placeholder="https://www.facebook.com/marketplace/item/..."
+                    />
+                  </label>
+                  <p className="notice">
+                    The link is kept for reference. This preview cannot read
+                    marketplace pages. Add the ad text for extraction.
+                  </p>
+                </>
+              )}
+              {method === "images" && (
+                <>
+                  <label className="upload-zone">
+                    <ImagePlus size={32} aria-hidden="true" />
+                    <span>Add listing screenshots or photos</span>
+                    <small>JPG, PNG or WebP. Up to 6 files, 10 MB each.</small>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                      onChange={files}
+                    />
+                  </label>
+                  <p className="notice">
+                    Image contents are not read or uploaded in this preview.
+                    Only file names, sizes and types are retained. Paste the
+                    text shown in the images or enter it in the review.
+                  </p>
+                  <div className="file-list">
+                    {form.photos.map((p, i) => (
+                      <div key={`${p.name}-${i}`}>
+                        <span>
+                          {p.name}
+                          <small>{formatFileSize(p.size)}</small>
+                        </span>
+                        <button
+                          className="icon-button"
+                          type="button"
+                          title={`Remove ${p.name}`}
+                          aria-label={`Remove ${p.name}`}
+                          onClick={() =>
+                            update(
+                              "photos",
+                              form.photos.filter((_, j) => j !== i),
+                            )
+                          }
+                        >
+                          <X size={18} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              {method === "manual" && (
+                <div className="manual-note">
+                  <PenLine size={28} aria-hidden="true" />
+                  <h2>No ad text available?</h2>
+                  <p>
+                    Enter what you know about the car. Anything you leave
+                    unknown becomes a question to ask the seller.
+                  </p>
+                </div>
+              )}
+              {form.listingUrl && method !== "url" && (
+                <p className="saved-link">
+                  <Link2 size={16} aria-hidden="true" />
+                  Saved link: <span>{form.listingUrl}</span>
+                </p>
+              )}
+              <div className="form-actions">
+                <button className="button button-primary" type="submit">
+                  {method === "manual" ||
+                  (method === "images" && !form.listingText)
+                    ? "Review Vehicle Details"
+                    : method === "url" && !form.listingText
+                      ? "Save Listing Link"
+                      : "Extract Vehicle Details"}
+                  <ArrowRight size={18} aria-hidden="true" />
+                </button>
+              </div>
+            </form>
+          )}
+          {step === 1 && (
+            <form onSubmit={review} noValidate>
+              <p className="notice">
+                {found.length
+                  ? `${found.length} fields found in the ad. `
+                  : "No vehicle details were extracted. "}
+                Missing details may stay unknown. Make and model are required to
+                identify the vehicle.
+              </p>
+              <fieldset>
+                <legend>01 / Vehicle identity</legend>
+                <div className="form-grid">
+                  {field("make", "Make")}
+                  {field("model", "Model")}
+                  {field("year", "Year", true)}
+                  {field("trim", "Trim")}
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend>02 / The listing</legend>
+                <div className="form-grid">
+                  {field("mileageKm", "Mileage (km)", true)}
+                  {field("askingPriceCad", "Asking price (CAD)", true)}
+                  {field("city", "City")}
+                  {field("vin", "VIN")}
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend>03 / Seller claims</legend>
+                <div className="form-grid">
+                  {select("sellerType", "Seller type", [
+                    ["private", "Private seller"],
+                    ["dealer", "Dealer"],
+                  ])}
+                  {select("carfaxStatus", "Carfax", [
+                    ["available", "Seller says available"],
+                    ["not_available", "Not available"],
+                  ])}
+                  {select("accidentHistoryMentioned", "Accident history", [
+                    ["yes", "Accident reported"],
+                    ["no", "Seller says no accidents"],
+                  ])}
+                  {select("rebuiltStatus", "Rebuilt / salvage status", [
+                    ["yes", "Rebuilt or salvage reported"],
+                    ["no", "Seller says not rebuilt / salvage"],
+                  ])}
+                  {select("inspectionAllowed", "Independent inspection", [
+                    ["yes", "Allowed"],
+                    ["no", "Refused"],
+                  ])}
+                  {select("maintenanceRecords", "Maintenance records", [
+                    ["yes", "Seller says available"],
+                    ["no", "Not available"],
+                  ])}
+                </div>
+              </fieldset>
+              <label>
+                Notes or concerns (optional)
+                <textarea
+                  rows={3}
+                  maxLength={4000}
+                  value={form.sellerDescription}
+                  onChange={(e) => update("sellerDescription", e.target.value)}
+                />
+                <small>
+                  Notes are retained for your reference. Only the confirmed
+                  fields above affect this preview report.
+                </small>
+              </label>
+              <div className="form-actions between">
+                <button
+                  className="button button-ghost"
+                  type="button"
+                  onClick={() => changeStep(0)}
+                >
+                  <ArrowLeft size={18} />
+                  Back
+                </button>
+                <button className="button button-primary" type="submit">
+                  Confirm & Continue
+                  <ArrowRight size={18} />
+                </button>
+              </div>
+            </form>
+          )}
+          {step === 2 && (
+            <>
+              <PricingCards
+                onSelect={(type) => {
+                  saveIntake({
+                    ...form,
+                    submittedAt: new Date().toISOString(),
+                  });
+                  saveReportType(type);
+                  router.push(`/report?type=${type}`);
+                }}
+              />
+              <p className="fine-print">
+                Full report opens as a preview. No payment or card details are
+                collected.
+              </p>
+              <button
+                className="button button-ghost"
+                type="button"
+                onClick={() => changeStep(1)}
+              >
+                <ArrowLeft size={18} />
+                Back to Vehicle
               </button>
-              <button className="button button-ghost" onClick={() => setStep("selection")} type="button">
-                Back to Options
-              </button>
-            </div>
-          </section>
-        ) : null}
-      </main>
+            </>
+          )}
+        </div>
+        <aside className="flow-sidebar">
+          <ShieldCheck size={28} aria-hidden="true" />
+          <h2>A clearer picture before you commit.</h2>
+          <p>
+            Start with what the seller shared. Keep the unknowns visible. Verify
+            before buying.
+          </p>
+          <hr />
+          <h3>Your listing, your control</h3>
+          <p>No account required. Your draft stays on this device.</p>
+          <a href="/example-report" className="text-link">
+            See an example report <ArrowRight size={16} />
+          </a>
+        </aside>
+      </div>
     </div>
   );
 }

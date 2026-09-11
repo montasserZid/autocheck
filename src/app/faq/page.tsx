@@ -1,30 +1,41 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Container } from "@/components/Container";
-import { SectionHeading } from "@/components/SectionHeading";
-import { faqItems } from "@/lib/mockData";
-
+import { faqItems } from "@/content/faq";
 export const metadata: Metadata = {
   title: "FAQ",
-  description: "Frequently asked questions about AutoCheck QC used-car pre-screening."
+  description:
+    "What AutoCheck QC can check, what remains unverified, and how listing reports work.",
 };
-
 export default function FaqPage() {
   return (
     <main className="page-shell">
-      <Container>
-        <SectionHeading
-          eyebrow="FAQ"
-          title="Used-car pre-screening, without overpromising."
-          body="AutoCheck QC helps buyers decide what to verify before they buy."
-          align="center"
-        />
-        <div className="faq-grid">
-          {faqItems.map((item) => (
-            <article className="faq-item" key={item.question}>
-              <h2>{item.question}</h2>
-              <p>{item.answer}</p>
-            </article>
+      <Container className="narrow">
+        <div className="page-heading">
+          <p className="eyebrow">Frequently asked questions</p>
+          <h1>
+            Before you check
+            <br />
+            the next car.
+          </h1>
+          <p>
+            Clear answers about reports, seller claims, inspection requests and
+            your data.
+          </p>
+        </div>
+        <div className="faq-list">
+          {faqItems.map((f) => (
+            <details key={f.question}>
+              <summary>{f.question}</summary>
+              <p>{f.answer}</p>
+            </details>
           ))}
+        </div>
+        <div className="section-heading faq-end">
+          <h2>Another question?</h2>
+          <Link className="button button-secondary" href="/contact">
+            Contact AutoCheck QC
+          </Link>
         </div>
       </Container>
     </main>

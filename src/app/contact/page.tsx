@@ -1,38 +1,57 @@
 import type { Metadata } from "next";
-import { ButtonLink } from "@/components/ButtonLink";
+import Link from "next/link";
 import { Container } from "@/components/Container";
-import { SectionHeading } from "@/components/SectionHeading";
-
+import { ContactForm } from "@/components/ContactForm";
+import { contactTopics } from "@/content/contact";
 export const metadata: Metadata = {
   title: "Contact",
-  description: "Contact AutoCheck QC for support, partner inquiries, or inspection questions."
+  description:
+    "Buyer support, inspection questions and privacy requests for AutoCheck QC.",
 };
-
 export default function ContactPage() {
   return (
     <main className="page-shell">
-      <Container className="narrow">
-        <SectionHeading
-          eyebrow="Contact"
-          title="Support and partner inquiries."
-          body="Phase 1 does not send messages yet. This page defines the future contact surface."
-        />
-        <div className="contact-panel">
-          <h2>Customer support</h2>
-          <p>Use this route for report questions, refund requests, privacy requests, and inspection follow-up.</p>
-          <h2>Inspection partners</h2>
+      <Container>
+        <div className="page-heading">
+          <p className="eyebrow">Contact AutoCheck QC</p>
+          <h1>
+            Good questions deserve
+            <br />
+            clear answers.
+          </h1>
           <p>
-            Mobile mechanics and independent inspectors in Montreal, Laval, Longueuil, Brossard,
-            South Shore, and North Shore can be routed through this page in Phase 2.
+            For buyers, inspection professionals and anyone who needs a closer
+            look.
           </p>
-          <div className="button-row">
-            <ButtonLink href="/check" variant="primary">
-              Check a Car
-            </ButtonLink>
-            <ButtonLink href="/inspection" variant="secondary">
-              Book Inspection
-            </ButtonLink>
+        </div>
+        <div className="two-column contact-layout">
+          <div className="contact-topics">
+            {contactTopics.map((t, i) => (
+              <section key={t}>
+                <span>0{i + 1}</span>
+                <div>
+                  <h2>{t}</h2>
+                  <p>
+                    {
+                      [
+                        "Questions about a listing, your report or its limitations.",
+                        "Vehicle location, preferred timing and request details.",
+                        "For independent inspection professionals in the Montreal area. No partner enrolment is active.",
+                        "Review how information is saved and remove it from this browser.",
+                        "Product questions and other inquiries.",
+                      ][i]
+                    }
+                  </p>
+                  {i === 3 && (
+                    <Link className="text-link" href="/privacy">
+                      Privacy and deletion controls
+                    </Link>
+                  )}
+                </div>
+              </section>
+            ))}
           </div>
+          <ContactForm />
         </div>
       </Container>
     </main>
